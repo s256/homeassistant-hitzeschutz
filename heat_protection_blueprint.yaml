@@ -64,10 +64,12 @@ blueprint:
 
     notify_target:
       name: "Notification Target"
-      description: "Device to notify when a window is open or a sensor is unavailable (e.g. mobile_app_yourphone)."
-      default: ""
+      description: "Device to notify when a window is open or a sensor is unavailable. Leave empty to disable notifications."
+      default: []
       selector:
-        text:
+        entity:
+          domain: notify
+          multiple: true
 
     heat_protection_active:
       name: "Heat Protection Day Status"
@@ -166,9 +168,11 @@ actions:
           # Notify about unavailable window sensors (Zigbee/connectivity issue)
           - if:
               - condition: template
-                value_template: "{{ notify_target != '' and unavailable_sensors | length > 0 }}"
+                value_template: "{{ notify_target | length > 0 and unavailable_sensors | length > 0 }}"
             then:
-              - action: "notify.{{ notify_target }}"
+              - action: notify.send_message
+                target:
+                  entity_id: "{{ notify_target }}"
                 data:
                   title: "⚠️ Heat Protection: Sensor Problem"
                   message: >
@@ -180,9 +184,11 @@ actions:
           # Notify about open windows (cover skipped)
           - if:
               - condition: template
-                value_template: "{{ notify_target != '' and open_windows | length > 0 }}"
+                value_template: "{{ notify_target | length > 0 and open_windows | length > 0 }}"
             then:
-              - action: "notify.{{ notify_target }}"
+              - action: notify.send_message
+                target:
+                  entity_id: "{{ notify_target }}"
                 data:
                   title: "🪟 Heat Protection: Window Open"
                   message: >
