@@ -62,6 +62,13 @@ blueprint:
           step: 1
           unit_of_measurement: "°"
 
+    notify_target:
+      name: "Notification Target"
+      description: "Device to notify when a window is open or a sensor is unavailable (e.g. mobile_app_yourphone)."
+      default: ""
+      selector:
+        text:
+
     heat_protection_active:
       name: "Heat Protection Day Status"
       description: "An input_boolean tracking whether heat protection is active today. Only required helper."
@@ -110,9 +117,27 @@ actions:
       temp_threshold: !input temperature_threshold
       elev_dark: !input darkness_elevation
       status_toggle: !input heat_protection_active
+      notify_target: !input notify_target
       is_hot_day: >
         {{ states(temp_sensor) not in ['unavailable', 'unknown', 'none']
            and states(temp_sensor) | float(0) > temp_threshold | float(27) }}
+      unavailable_sensors: >
+        {% set ns = namespace(result=[]) %}
+        {% for sensor in windows %}
+          {% if states(sensor) in ['unavailable', 'unknown'] %}
+            {% set ns.result = ns.result + [state_attr(sensor, 'friendly_name') | default(sensor)] %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.result }}
+      open_windows: >
+        {% set ns = namespace(result=[]) %}
+        {% for i in range([covers|length, windows|length]|min) %}
+          {% if states(windows[i]) == 'on'
+             and states(covers[i]) not in ['closed', 'unavailable'] %}
+            {% set ns.result = ns.result + [state_attr(windows[i], 'friendly_name') | default(windows[i])] %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.result }}
       covers_to_close: >
         {% set ns = namespace(result=[]) %}
         {% for i in range([covers|length, windows|length]|min) %}
@@ -138,6 +163,35 @@ actions:
           - action: input_boolean.turn_on
             target:
               entity_id: !input heat_protection_active
+          # Notify about unavailable window sensors (Zigbee/connectivity issue)
+          - if:
+              - condition: template
+                value_template: "{{ notify_target != '' and unavailable_sensors | length > 0 }}"
+            then:
+              - action: "notify.{{ notify_target }}"
+                data:
+                  title: "⚠️ Heat Protection: Sensor Problem"
+                  message: >
+                    Cannot determine window state for: {{ unavailable_sensors | join(', ') }}.
+                    These covers were skipped. Please check sensor connectivity.
+                  data:
+                    tag: heat_protection_sensor_issue
+                    channel: Heat Protection
+          # Notify about open windows (cover skipped)
+          - if:
+              - condition: template
+                value_template: "{{ notify_target != '' and open_windows | length > 0 }}"
+            then:
+              - action: "notify.{{ notify_target }}"
+                data:
+                  title: "🪟 Heat Protection: Window Open"
+                  message: >
+                    Heat protection is active but these windows are open: {{ open_windows | join(', ') }}.
+                    Close them and the covers will follow automatically.
+                  data:
+                    tag: heat_protection_window_open
+                    channel: Heat Protection
+          # Close covers where window is shut
           - condition: template
             value_template: "{{ covers_to_close | length > 0 }}"
           - action: cover.close_cover

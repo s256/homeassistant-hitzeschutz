@@ -11,6 +11,7 @@ Automatically close covers (roller shutters, blinds, awnings) in the morning whe
 - **Elevation-based opening**: Opens in the evening based on sun elevation angle — works correctly year-round regardless of season.
 - **HA restart recovery**: Re-evaluates and closes covers after a Home Assistant restart mid-day.
 - **Respects manual override**: If you manually open a cover (e.g. for ventilation), it won't be automatically closed again.
+- **Notifications**: Alerts you when a window is open (cover skipped) or a sensor is unavailable (connectivity issue).
 - **Multi-cover support**: Handles any number of cover/window-sensor pairs.
 
 ## Architecture
@@ -137,6 +138,7 @@ Settings > Automations & Scenes > Create Automation > Use Blueprint > "Heat Prot
 | Temperature Sensor | Your `sensor.forecast_high_temperature` |
 | Temperature Threshold | Forecast temp above which covers close (default: 27°C) |
 | Darkness Elevation | Sun elevation at which covers reopen in the evening (default: -5°) |
+| Notification Target | Notify service target, e.g. `mobile_app_yourphone` (optional, leave empty to disable) |
 | Day Status Toggle | Your `input_boolean.heat_protection_active` |
 
 > **Important**: Covers and window sensors must be in the same order!
@@ -175,7 +177,7 @@ All settings are configured directly in the blueprint inputs — no extra helper
 
 | Problem | Solution |
 |---------|----------|
-| Window sensor reports `unavailable` | Cover only closes on explicit `off` state (fail-safe) |
+| Window sensor reports `unavailable` | Cover skipped + notification sent (Zigbee/connectivity issue) |
 | Forecast sensor unavailable | Condition check prevents automation from running |
 | HA restart mid-day | Recovery path: wait 2 min, re-evaluate, close if needed |
 
