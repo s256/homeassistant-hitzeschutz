@@ -62,14 +62,14 @@ blueprint:
           step: 1
           unit_of_measurement: "°"
 
-    notify_target:
-      name: "Notification Target"
-      description: "Device to notify when a window is open or a sensor is unavailable. Leave empty to disable notifications."
-      default: []
+    notify_device:
+      name: "Notification Device"
+      description: "Mobile device to notify when a window is open or a sensor is unavailable. Requires the HA Companion App."
+      default: ""
       selector:
-        entity:
-          domain: notify
-          multiple: true
+        device:
+          filter:
+            - integration: mobile_app
 
     heat_protection_active:
       name: "Heat Protection Day Status"
@@ -119,7 +119,11 @@ actions:
       temp_threshold: !input temperature_threshold
       elev_dark: !input darkness_elevation
       status_toggle: !input heat_protection_active
-      notify_target: !input notify_target
+      notify_device: !input notify_device
+      notify_service: >
+        {% if notify_device %}
+          notify.mobile_app_{{ device_attr(notify_device, 'name') | slugify(separator='_') }}
+        {% endif %}
       is_hot_day: >
         {{ states(temp_sensor) not in ['unavailable', 'unknown', 'none']
            and states(temp_sensor) | float(0) > temp_threshold | float(27) }}
@@ -168,11 +172,9 @@ actions:
           # Notify about unavailable window sensors (Zigbee/connectivity issue)
           - if:
               - condition: template
-                value_template: "{{ notify_target | length > 0 and unavailable_sensors | length > 0 }}"
+                value_template: "{{ notify_service and unavailable_sensors | length > 0 }}"
             then:
-              - action: notify.send_message
-                target:
-                  entity_id: "{{ notify_target }}"
+              - action: "{{ notify_service }}"
                 data:
                   title: "⚠️ Heat Protection: Sensor Problem"
                   message: >
@@ -184,11 +186,9 @@ actions:
           # Notify about open windows (cover skipped)
           - if:
               - condition: template
-                value_template: "{{ notify_target | length > 0 and open_windows | length > 0 }}"
+                value_template: "{{ notify_service and open_windows | length > 0 }}"
             then:
-              - action: notify.send_message
-                target:
-                  entity_id: "{{ notify_target }}"
+              - action: "{{ notify_service }}"
                 data:
                   title: "🪟 Heat Protection: Window Open"
                   message: >

@@ -138,7 +138,7 @@ Settings > Automations & Scenes > Create Automation > Use Blueprint > "Heat Prot
 | Temperature Sensor | Your `sensor.forecast_high_temperature` |
 | Temperature Threshold | Forecast temp above which covers close (default: 27°C) |
 | Darkness Elevation | Sun elevation at which covers reopen in the evening (default: -5°) |
-| Notification Target | Notify service target, e.g. `mobile_app_yourphone` (optional, leave empty to disable) |
+| Notification Device | Your phone (requires HA Companion App, optional) |
 | Day Status Toggle | Your `input_boolean.heat_protection_active` |
 
 > **Important**: Covers and window sensors must be in the same order!
