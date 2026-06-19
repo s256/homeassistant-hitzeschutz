@@ -1,0 +1,187 @@
+blueprint:
+  name: "Heat Protection"
+  description: >
+    Closes covers (roller shutters, blinds, awnings) in the morning when a hot
+    day is forecast and the corresponding window is closed. Reopens them in the
+    evening once the sun drops below a configurable elevation angle.
+
+    Covers and window sensors must be selected in the same order
+    (Cover 1 belongs to Window Sensor 1, etc.)
+
+    Only one external helper required: an input_boolean for daily status tracking.
+  domain: automation
+  author: "s256"
+  source_url: "https://github.com/s256/homeassistant-hitzeschutz/blob/main/heat_protection_blueprint.yaml"
+
+  input:
+    covers:
+      name: "Covers"
+      description: "All covers to control. Order must match window sensors."
+      selector:
+        entity:
+          domain: cover
+          multiple: true
+
+    window_sensors:
+      name: "Window Sensors"
+      description: "Binary sensors for each window (off = closed). Same order as covers."
+      selector:
+        entity:
+          domain: binary_sensor
+          multiple: true
+
+    temperature_sensor:
+      name: "Forecast High Temperature Sensor"
+      description: "A template sensor providing today's predicted high temperature."
+      selector:
+        entity:
+          domain: sensor
+          device_class: temperature
+
+    temperature_threshold:
+      name: "Temperature Threshold (°C)"
+      description: "Forecast high above which covers will close."
+      default: 27
+      selector:
+        number:
+          min: 20
+          max: 40
+          step: 1
+          unit_of_measurement: "°C"
+
+    darkness_elevation:
+      name: "Darkness Elevation (°)"
+      description: >
+        Sun elevation below which covers reopen in the evening.
+        -5 = approx. 22:30 in June at 51°N, -6 = end of civil twilight.
+      default: -5
+      selector:
+        number:
+          min: -12
+          max: 0
+          step: 1
+          unit_of_measurement: "°"
+
+    heat_protection_active:
+      name: "Heat Protection Day Status"
+      description: "An input_boolean tracking whether heat protection is active today. Only required helper."
+      selector:
+        entity:
+          domain: input_boolean
+
+mode: parallel
+max: 4
+
+trigger_variables:
+  _elev_dark: !input darkness_elevation
+
+triggers:
+  - trigger: numeric_state
+    id: close
+    entity_id: sun.sun
+    attribute: elevation
+    above: 0
+
+  - trigger: state
+    id: close
+    entity_id: !input window_sensors
+    to: "off"
+    for:
+      seconds: 30
+
+  - trigger: template
+    id: open
+    value_template: >
+      {{ state_attr('sun.sun', 'elevation') | float(0) < _elev_dark | float(-5) }}
+    for:
+      minutes: 10
+
+  - trigger: homeassistant
+    id: recovery
+    event: start
+
+conditions: []
+
+actions:
+  - variables:
+      covers: !input covers
+      windows: !input window_sensors
+      temp_sensor: !input temperature_sensor
+      temp_threshold: !input temperature_threshold
+      elev_dark: !input darkness_elevation
+      status_toggle: !input heat_protection_active
+      is_hot_day: >
+        {{ states(temp_sensor) not in ['unavailable', 'unknown', 'none']
+           and states(temp_sensor) | float(0) > temp_threshold | float(27) }}
+      covers_to_close: >
+        {% set ns = namespace(result=[]) %}
+        {% for i in range([covers|length, windows|length]|min) %}
+          {% if states(windows[i]) == 'off'
+             and states(covers[i]) not in ['closed', 'unavailable'] %}
+            {% set ns.result = ns.result + [covers[i]] %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.result }}
+
+  - choose:
+      # ---- MORNING: CLOSE COVERS ----
+      - conditions:
+          - condition: trigger
+            id: close
+          - condition: template
+            value_template: "{{ is_hot_day }}"
+          - condition: numeric_state
+            entity_id: sun.sun
+            attribute: elevation
+            above: -2
+        sequence:
+          - action: input_boolean.turn_on
+            target:
+              entity_id: !input heat_protection_active
+          - condition: template
+            value_template: "{{ covers_to_close | length > 0 }}"
+          - action: cover.close_cover
+            target:
+              entity_id: "{{ covers_to_close }}"
+
+      # ---- EVENING: OPEN COVERS ----
+      - conditions:
+          - condition: trigger
+            id: open
+          - condition: state
+            entity_id: !input heat_protection_active
+            state: "on"
+          - condition: time
+            after: "18:00:00"
+        sequence:
+          - action: cover.open_cover
+            target:
+              entity_id: !input covers
+          - action: input_boolean.turn_off
+            target:
+              entity_id: !input heat_protection_active
+
+      # ---- HA RESTART RECOVERY ----
+      - conditions:
+          - condition: trigger
+            id: recovery
+          - condition: template
+            value_template: "{{ is_hot_day }}"
+          - condition: numeric_state
+            entity_id: sun.sun
+            attribute: elevation
+            above: 0
+          - condition: template
+            value_template: >
+              {{ state_attr('sun.sun', 'elevation') | float(0) > elev_dark | float(-5) }}
+        sequence:
+          - delay:
+              minutes: 2
+          - action: input_boolean.turn_on
+            target:
+              entity_id: !input heat_protection_active
+          - condition: template
+            value_template: "{{ covers_to_close | length > 0 }}"
+          - action: cover.close_cover
+            target:
+              entity_id: "{{ covers_to_close }}"
